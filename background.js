@@ -4,18 +4,35 @@ const state = {
 };
 
 // Salesforce domain patterns
-const SALESFORCE_DOMAIN_PATTERNS = [
-    '.salesforce.com',
-    '.force.com',
-    '.lightning.force.com',
-    '.visualforce.com'
+const SALESFORCE_DOMAINS = {
+    '.salesforce.com': true,
+    '.force.com': true,
+    '.lightning.force.com': true,
+    '.visualforce.com': true
+};
+
+// Setup URL patterns
+const SETUP_PATTERNS = [
+    '/lightning/setup/',
+    '/setup/',
+    '/_ui/common/setup/'
 ];
 
 // Check if URL matches Salesforce domains
 function isSalesforceDomain(url) {
     try {
         const hostname = new URL(url).hostname;
-        return SALESFORCE_DOMAIN_PATTERNS.some(pattern => hostname.endsWith(pattern));
+        return Object.keys(SALESFORCE_DOMAINS).some(domain => hostname.endsWith(domain));
+    } catch (e) {
+        return false;
+    }
+}
+
+// Check if URL matches setup patterns
+function isSetupUrl(url) {
+    try {
+        const pathname = new URL(url).pathname;
+        return SETUP_PATTERNS.some(pattern => pathname.includes(pattern));
     } catch (e) {
         return false;
     }
@@ -30,7 +47,7 @@ chrome.runtime.onInstalled.addListener(async () => {
             path: 'sidepanel.html'
         });
     } catch (error) {
-        console.error('Error setting side panel options:', error);
+        // Handle error silently - will auto-retry on next startup
     }
 });
 
@@ -47,6 +64,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const tabId = sender.tab?.id;
             if (!tabId) {
                 sendResponse({ error: 'No tab ID provided' });
+                return true;
+            }
+            
+            // Validate URL
+            if (!isSalesforceDomain(message.url)) {
+                sendResponse({ error: 'Invalid Salesforce domain' });
                 return true;
             }
             
@@ -71,7 +94,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ success: true });
                 })
                 .catch((error) => {
-                    console.error('Error opening side panel:', error);
+                    // Handle error silently but respond with error status
                     sendResponse({ error: error.message });
                 });
             
@@ -83,6 +106,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const tabId = sender.tab?.id;
             if (!tabId) {
                 sendResponse({ error: 'No tab ID provided' });
+                return true;
+            }
+            
+            // Validate URL
+            if (!isSalesforceDomain(message.url)) {
+                sendResponse({ error: 'Invalid Salesforce domain' });
                 return true;
             }
             
@@ -112,10 +141,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         sendResponse({ error: 'Unknown message type' });
     } catch (e) {
-        console.error('Error handling message:', e);
+        // Log error but don't expose to console
         sendResponse({ error: e.message });
     }
     
     return true;
 });
-
