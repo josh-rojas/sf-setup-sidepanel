@@ -5,33 +5,12 @@
  * @const {Object}
  */
 const SALESFORCE_DOMAINS = {
-    // Core domains
-    'salesforce.com': {
-        purpose: 'Main Salesforce domain for login, authentication, and content sites',
-        setupPatterns: ['/lightning/setup', '/_ui/common/setup/Setup']
-    },
-    'force.com': {
-        purpose: 'Visualforce pages, Lightning pages, and content storage',
-        setupPatterns: ['/setup']
-    },
-    'salesforce-setup.com': {
-        purpose: 'Dedicated domain for Setup pages in Salesforce',
-        setupPatterns: ['*'] // All paths on this domain are setup-related
-    },
-    // Legacy domains (pre-Winter '24, orgs without enhanced domains)
-    'visualforce.com': {
-        purpose: 'Legacy domain for Visualforce pages',
-        setupPatterns: ['/apex/setup']
-    },
-    'lightning.com': {
-        purpose: 'Legacy domain for Lightning container components',
-        setupPatterns: ['/setup']
-    },
-    'sfdcstatic.com': {
-        purpose: 'Static resource content delivery',
-        setupPatterns: [] // No direct setup URLs
-    }
+    '.salesforce.com': true,
+    '.force.com': true,
+    '.lightning.force.com': true,
+    '.visualforce.com': true
 };
+
 /**
  * Constants for DOM selectors used to detect Setup UI elements
  * @const {Object}
@@ -42,6 +21,16 @@ const SETUP_SELECTORS = {
 };
 
 /**
+ * Constants for setup URL patterns
+ * @const {Array}
+ */
+const SETUP_PATTERNS = [
+    '/lightning/setup/',
+    '/setup/',
+    '/_ui/common/setup/'
+];
+
+/**
  * Validates if a given URL belongs to a Salesforce domain
  * @param {string} url - The URL to validate
  * @returns {boolean} True if the URL belongs to a Salesforce domain
@@ -49,11 +38,8 @@ const SETUP_SELECTORS = {
 function isSalesforceDomain(url) {
     try {
         const hostname = new URL(url).hostname;
-        return Object.keys(SALESFORCE_DOMAINS).some(domain => 
-            hostname.endsWith('.' + domain) || hostname === domain
-        );
-    } catch (error) {
-        console.error('Error parsing URL:', error);
+        return Object.keys(SALESFORCE_DOMAINS).some(domain => hostname.endsWith(domain));
+    } catch (e) {
         return false;
     }
 }
@@ -97,11 +83,9 @@ function isSetupPage(url) {
  */
 function checkForSetupMenu() {
     try {
-        const isClassicSetup = !!document.querySelector(SETUP_SELECTORS.classic);
-        const isLightningSetup = !!document.querySelector(SETUP_SELECTORS.lightning);
-        return isClassicSetup || isLightningSetup;
+        return document.querySelector(SETUP_SELECTORS.classic) || 
+               document.querySelector(SETUP_SELECTORS.lightning);
     } catch (error) {
-        console.error('Error checking for setup menu:', error);
         return false;
     }
 }
@@ -113,8 +97,10 @@ function checkForSetupMenu() {
 async function checkAndReportSetupPage() {
     try {
         const currentUrl = window.location.href;
-        if (isSalesforceDomain(currentUrl) && 
-           (isSetupPage(currentUrl) || checkForSetupMenu())) {
+        const isSetupPageNow = isSalesforceDomain(currentUrl) && 
+                             (isSetupPage(currentUrl) || checkForSetupMenu());
+        
+        if (isSetupPageNow) {
             try {
                 // Use the chrome.runtime.sendMessage API instead of direct function calls
                 await chrome.runtime.sendMessage({
@@ -134,6 +120,9 @@ async function checkAndReportSetupPage() {
                     console.error('Error sending setup detection message:', error);
                 }
             }
+        } else {
+            // If not on a setup page, ensure link interception is enabled
+            setupLinkInterception();
         }
     } catch (error) {
         console.error('Error checking setup page:', error);
@@ -212,21 +201,88 @@ if (isSalesforceDomain(window.location.href)) {
 
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    try {
-        if (message.type === 'GET_SETUP_STATUS') {
-            sendResponse({
-                isSalesforceDomain: isSalesforceDomain(window.location.href),
-                isSetupPage: isSetupPage(window.location.href) || checkForSetupMenu()
-            });
-            return true;
-        }
-        
-        // Handle other message types here
-        
-        return false;
-    } catch (error) {
-        console.error('Error handling message:', error);
-        sendResponse({ error: error.message });
+    if (message.type === 'CHECK_FOR_SETUP') {
+        sendResponse({ checked: true });
         return true;
     }
+    
+    sendResponse({ error: 'Unknown message type' });
+    return true;
 });
+
+// Check if the URL is a setup URL pattern
+function isSetupUrl(url) {
+    return SETUP_PATTERNS.some(pattern => url.includes(pattern));
+}
+
+// Set up link interception for setup navigation
+function setupLinkInterception() {
+    document.addEventListener('click', function(event) {
+        try {
+            // Find if the click was on a link or a child of a link
+            let target = event.target;
+            let href = null;
+            
+            // Find the closest anchor element or setup-specific element
+            while (target && target !== document) {
+                // Check for anchor tags
+                if (target.tagName === 'A') {
+                    href = target.href;
+                    break;
+                }
+                
+                // Check for setup-specific elements
+                if (target.matches) {
+                    if (target.matches(SETUP_SELECTORS.lightning) || 
+                        target.matches(SETUP_SELECTORS.classic) ||
+                        (target.getAttribute && target.getAttribute('data-id') === 'Setup')) {
+                        
+                        const setupObserver = new MutationObserver(() => {
+                            if (isSetupUrl(window.location.href)) {
+                                setupObserver.disconnect();
+                                
+                                chrome.runtime.sendMessage({
+                                    type: 'SETUP_LINK_CLICKED',
+                                    url: window.location.href
+                                }).then(() => {
+                                    history.back();
+                                }).catch(() => {});
+                            }
+                        });
+                        
+                        setupObserver.observe(document, { subtree: true, childList: true });
+                        setTimeout(() => setupObserver.disconnect(), 3000);
+                        break;
+                    }
+                }
+                
+                target = target.parentElement;
+            }
+            
+            // If we found a setup link, intercept it
+            if (href && isSetupUrl(href)) {
+                event.preventDefault();
+                event.stopPropagation();
+                
+                chrome.runtime.sendMessage({
+                    type: 'SETUP_LINK_CLICKED',
+                    url: href
+                }).catch(() => {
+                    // Fall back to default navigation if messaging fails
+                    window.location.href = href;
+                });
+                
+                return false;
+            }
+        } catch (error) {
+            // In case of error, let the default behavior happen
+        }
+    }, true);
+}
+
+// Start the initialization
+try {
+    initialize();
+} catch (error) {
+    console.error('Error initializing content script:', error);
+}

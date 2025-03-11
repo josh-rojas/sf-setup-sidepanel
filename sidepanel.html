@@ -3,23 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Salesforce Setup Side Panel for quick access to setup pages">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.salesforce.com https://*.force.com https://*.salesforce-setup.com; img-src 'self' data: https:; frame-ancestors 'none'">
-    <meta name="theme-color" content="#0176d3">
+    <meta name="description" content="Salesforce Setup Side Panel">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.salesforce.com https://*.force.com; img-src 'self' data: https:; frame-ancestors 'none'">
     <title>SF Setup Side Panel</title>
-    <link rel="icon" type="image/png" href="icons/icon16.png" sizes="16x16">
-    <link rel="icon" type="image/png" href="icons/icon32.png" sizes="32x32">
-    <link rel="icon" type="image/png" href="icons/icon48.png" sizes="48x48">
-    <link rel="icon" type="image/png" href="icons/icon128.png" sizes="128x128">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container" role="main">
-        <header role="banner">
+    <div class="container">
+        <header>
             <div class="header-content">
                 <div class="header-title">
-                    <img src="icons/icon32.png" alt="Salesforce Setup" class="header-icon">
-                    <h1>Setup</h1>
+                    <h1>Salesforce Setup</h1>
                 </div>
                 <div class="header-actions">
                     <button id="refreshButton" class="button button-icon" aria-label="Refresh setup panel">
@@ -29,17 +23,13 @@
                     </button>
                 </div>
             </div>
-            <div class="search-container">
-                <input type="search" id="setupSearch" class="search-input" placeholder="Quick find setup..." aria-label="Search setup items">
-            </div>
         </header>
         
-        <main id="app" role="main" aria-live="polite">
-            <div id="loading-indicator" role="status" aria-live="polite">
+        <main id="app">
+            <div id="loading-indicator">
                 Loading Salesforce Setup...
             </div>
-            <div id="error-display" class="error-container" role="alert" style="display: none;">
-                <span class="error-icon" aria-hidden="true">⚠️</span>
+            <div id="error-display" class="error-container">
                 <div class="error-message">An error occurred</div>
             </div>
             <div id="content-container"></div>
