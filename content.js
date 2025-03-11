@@ -106,138 +106,127 @@ function checkForSetupMenu() {
     }
 }
 
-// Listen for URL changes to detect navigation to setup pages
-let currentUrl = window.location.href;
-const observer = new MutationObserver(() => {
-    if (window.location.href !== currentUrl) {
-        currentUrl = window.location.href;
-        if (isSalesforceDomain(currentUrl) && isSetupPage(currentUrl)) {
-            chrome.runtime.sendMessage({
-                type: 'SETUP_PAGE_DETECTED',
-                url: currentUrl
-            });
+/**
+ * Checks if the current page is a Salesforce setup page and reports to background script
+ * @returns {Promise<void>}
+ */
+async function checkAndReportSetupPage() {
+    try {
+        const currentUrl = window.location.href;
+        if (isSalesforceDomain(currentUrl) && 
+           (isSetupPage(currentUrl) || checkForSetupMenu())) {
+            try {
+                // Use the chrome.runtime.sendMessage API instead of direct function calls
+                await chrome.runtime.sendMessage({
+                    type: 'SETUP_DETECTED',
+                    url: currentUrl
+                });
+                console.log('Salesforce Setup detected at:', currentUrl);
+            } catch (error) {
+                // Handle specific errors
+                if (error.message.includes('Extension context invalidated')) {
+                    cleanupExtension();
+                } else if (error.message.includes('Could not establish connection')) {
+                    console.warn('Connection to extension failed, will retry later');
+                    // Schedule a retry after a delay
+                    setTimeout(checkAndReportSetupPage, 2000);
+                } else {
+                    console.error('Error sending setup detection message:', error);
+                }
+            }
         }
+    } catch (error) {
+        console.error('Error checking setup page:', error);
     }
-});
+}
 
-// Start observing URL changes when in a Salesforce domain
-if (isSalesforceDomain(window.location.href)) {
-    observer.observe(document, { subtree: true, childList: true });
+// Track extension status
+let extensionActive = true;
+
+/**
+ * Cleans up extension resources when the extension is reloaded or disabled
+ */
+function cleanupExtension() {
+    if (!extensionActive) return; // Avoid redundant cleanup
     
-    // Initial check for setup page
-    if (isSetupPage(window.location.href)) {
-        chrome.runtime.sendMessage({
-            type: 'SETUP_PAGE_DETECTED',
-            url: window.location.href
-        });
+    console.log('Cleaning up extension resources');
+    extensionActive = false;
+    
+    // Disconnect observers
+    if (observer) {
+        observer.disconnect();
+    }
+    
+    // Remove event listeners
+    window.removeEventListener('load', checkAndReportSetupPage);
+    window.removeEventListener('unload', handleUnload);
+}
+
+/**
+ * Handles page unload events
+ */
+function handleUnload() {
+    cleanupExtension();
+}
+
+// Unified observer for both URL changes and DOM changes
+let currentUrl = window.location.href;
+let observer = null;
+
+// Initialize the observer if we're in a Salesforce domain
+if (isSalesforceDomain(window.location.href)) {
+    // Create the observer
+    observer = new MutationObserver(() => {
+        try {
+            // Check for URL changes
+            if (window.location.href !== currentUrl) {
+                currentUrl = window.location.href;
+                checkAndReportSetupPage();
+            }
+            
+            // Check for DOM changes that might indicate setup elements
+            if (checkForSetupMenu()) {
+                checkAndReportSetupPage();
+            }
+        } catch (error) {
+            console.error('Error in observer callback:', error);
+        }
+    });
+    
+    // Start observing DOM for changes with error handling
+    try {
+        observer.observe(document, { subtree: true, childList: true });
+        
+        // Initial check
+        checkAndReportSetupPage();
+        
+        // Also check when the page is fully loaded
+        window.addEventListener('load', checkAndReportSetupPage);
+        
+        // Clean up on page unload
+        window.addEventListener('unload', handleUnload);
+    } catch (error) {
+        console.error('Error starting observer:', error);
     }
 }
 
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'GET_SETUP_STATUS') {
-        sendResponse({
-            isSalesforceDomain: isSalesforceDomain(window.location.href),
-            isSetupPage: isSetupPage(window.location.href)
-        });
-    }
-});
-
-// State tracking for setup detection
-let isInSetup = false;
-
-// Store original History API methods
-const originalPushState = history.pushState;
-const originalReplaceState = history.replaceState;
-/**
- * Handles setup detection state changes and sends appropriate messages
- * @param {boolean} detected - Whether setup is currently detected
- * @returns {Promise<void>}
- */
-async function handleSetupDetection(detected) {
-    if (detected === isInSetup) {
-        return; // No state change
-    }
-
-    isInSetup = detected;
-    const message = {
-        type: detected ? 'SETUP_DETECTED' : 'SETUP_CLOSED',
-        timestamp: Date.now()
-    };
-
-    if (detected) {
-        message.url = window.location.href;
-    }
-
     try {
-        await chrome.runtime.sendMessage(message);
-        console.log(detected ? 'Salesforce Setup detected' : 'Left Salesforce Setup');
-    } catch (error) {
-        console.error(`Error sending ${message.type} message:`, error);
-        // Re-throw specific errors that need special handling
-        if (error.message.includes('Extension context invalidated')) {
-            throw error;
+        if (message.type === 'GET_SETUP_STATUS') {
+            sendResponse({
+                isSalesforceDomain: isSalesforceDomain(window.location.href),
+                isSetupPage: isSetupPage(window.location.href) || checkForSetupMenu()
+            });
+            return true;
         }
+        
+        // Handle other message types here
+        
+        return false;
+    } catch (error) {
+        console.error('Error handling message:', error);
+        sendResponse({ error: error.message });
+        return true;
     }
-}
-/**
- * Handles URL changes and triggers setup detection
- */
-function handleUrlChange() {
-    const setupDetected = isSetupPage(window.location.href) || checkForSetupMenu();
-    handleSetupDetection(setupDetected).catch(handleExtensionError);
-}
-
-// Override History API methods to detect URL changes
-history.pushState = function(...args) {
-    originalPushState.apply(this, args);
-    handleUrlChange();
-};
-
-history.replaceState = function(...args) {
-    originalReplaceState.apply(this, args);
-    handleUrlChange();
-};
-
-// Listen for popstate events
-window.addEventListener('popstate', handleUrlChange);
-
-const setupObserver = new MutationObserver(() => {
-    const setupDetected = checkForSetupMenu();
-    handleSetupDetection(setupDetected).catch(handleExtensionError);
-});
-
-/**
- * Handles extension-specific errors
- * @param {Error} error - The error to handle
- */
-function handleExtensionError(error) {
-    if (error.message.includes('Extension context invalidated')) {
-        // Extension was reloaded or disabled
-        setupObserver.disconnect();
-        observer.disconnect();
-        // Clean up event listeners
-        window.removeEventListener('popstate', handleUrlChange);
-        // Restore original History API methods
-        history.pushState = originalPushState;
-        history.replaceState = originalReplaceState;
-    } else {
-        console.error('Extension error:', error);
-    }
-}
-
-// Start observing DOM changes for Setup UI elements
-setupObserver.observe(document.body, {
-    childList: true,
-    subtree: true
-});
-
-// Initial setup check
-const initialSetupDetected = checkForSetupMenu();
-handleSetupDetection(initialSetupDetected).catch(handleExtensionError);
-
-// Cleanup on unload
-window.addEventListener('unload', () => {
-    setupObserver.disconnect();
-    observer.disconnect();
 });
