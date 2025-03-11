@@ -8,7 +8,8 @@ const SALESFORCE_DOMAINS = {
     '.salesforce.com': true,
     '.force.com': true,
     '.lightning.force.com': true,
-    '.visualforce.com': true
+    '.visualforce.com': true,
+    '.salesforce-setup.com': true
 };
 
 // Setup URL patterns
@@ -81,22 +82,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 setupUrl: message.url
             });
             
-            // Since this is in response to a user clicking a link (user gesture),
-            // we can open the side panel immediately
-            chrome.sidePanel.open({ tabId: tabId })
-                .then(() => {
-                    return chrome.runtime.sendMessage({
+            // Improved error handling with retry logic
+            const openSidePanel = async () => {
+                try {
+                    // Wait for the side panel to open
+                    await chrome.sidePanel.open({ tabId: tabId });
+                    
+                    // Add a small delay to ensure the side panel is fully loaded
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    // Then try to send the message
+                    await chrome.runtime.sendMessage({
                         type: 'LOAD_SETUP',
                         url: message.url
                     });
-                })
-                .then(() => {
+                    
                     sendResponse({ success: true });
-                })
-                .catch((error) => {
-                    // Handle error silently but respond with error status
-                    sendResponse({ error: error.message });
-                });
+                } catch (error) {
+                    // If it's a connection error, we might want to retry once
+                    if (error.message && error.message.includes('Could not establish connection')) {
+                        // Wait a bit longer and try one more time
+                        setTimeout(async () => {
+                            try {
+                                await chrome.runtime.sendMessage({
+                                    type: 'LOAD_SETUP',
+                                    url: message.url
+                                });
+                                sendResponse({ success: true, retried: true });
+                            } catch (retryError) {
+                                sendResponse({ error: retryError.message });
+                            }
+                        }, 300);
+                    } else {
+                        sendResponse({ error: error.message });
+                    }
+                }
+            };
+            
+            // Execute the async function
+            openSidePanel();
             
             // Return true to indicate we'll send a response asynchronously
             return true;

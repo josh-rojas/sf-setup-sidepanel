@@ -1,5 +1,10 @@
 'use strict';
 
+// Track extension status and observers
+let extensionActive = true;
+let currentUrl = window.location.href;
+let observer = null;
+
 /**
  * Salesforce domain configurations
  * @const {Object}
@@ -8,7 +13,8 @@ const SALESFORCE_DOMAINS = {
     '.salesforce.com': true,
     '.force.com': true,
     '.lightning.force.com': true,
-    '.visualforce.com': true
+    '.visualforce.com': true,
+    '.salesforce-setup.com': true
 };
 
 /**
@@ -210,9 +216,6 @@ async function checkAndReportSetupPage() {
     }
 }
 
-// Track extension status
-let extensionActive = true;
-
 /**
  * Cleans up extension resources when the extension is reloaded or disabled
  */
@@ -248,10 +251,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ error: 'Unknown message type' });
     return true;
 });
-
-// Unified observer for both URL changes and DOM changes
-let currentUrl = window.location.href;
-let observer = null;
 
 // Initialize the observer if we're in a Salesforce domain
 if (isSalesforceDomain(window.location.href)) {
