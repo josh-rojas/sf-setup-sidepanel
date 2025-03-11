@@ -120,6 +120,7 @@ function setupLinkInterception() {
                 // Check for anchor tags
                 if (target.tagName === 'A') {
                     href = target.href;
+                    console.log('SF Setup Panel: Link clicked with href:', href);
                     break;
                 }
                 
@@ -129,17 +130,27 @@ function setupLinkInterception() {
                         target.matches(SETUP_SELECTORS.classic) ||
                         (target.getAttribute && target.getAttribute('data-id') === 'Setup')) {
                         
+                        console.log('SF Setup Panel: Setup menu element clicked');
+                        
                         // Set up an observer to detect navigation to setup page
                         const setupObserver = new MutationObserver(() => {
-                            if (isSetupUrl(window.location.href)) {
+                            const currentLocation = window.location.href;
+                            console.log('SF Setup Panel: Checking if setup URL:', currentLocation);
+                            
+                            if (isSetupUrl(currentLocation)) {
+                                console.log('SF Setup Panel: Setup URL detected, opening side panel');
                                 setupObserver.disconnect();
                                 
                                 chrome.runtime.sendMessage({
                                     type: 'SETUP_LINK_CLICKED',
-                                    url: window.location.href
-                                }).then(() => {
-                                    history.back();
-                                }).catch(() => {});
+                                    url: currentLocation
+                                }).then((response) => {
+                                    console.log('SF Setup Panel: Message sent, response:', response);
+                                    // Going back is optional - commented out so the setup page itself can be used
+                                    // history.back();
+                                }).catch((error) => {
+                                    console.error('SF Setup Panel: Error sending message:', error);
+                                });
                             }
                         });
                         
@@ -148,12 +159,13 @@ function setupLinkInterception() {
                         // Create a timeout to clean up observer if navigation doesn't occur
                         const timeoutId = setTimeout(() => {
                             try {
+                                console.log('SF Setup Panel: Cleaning up observer after timeout');
                                 setupObserver.disconnect();
                             } catch (error) {
                                 // Error handled silently
                             }
                         }, 3000);
-                        break;
+                        return; // Let the click proceed to trigger navigation
                     }
                 }
                 
@@ -162,20 +174,27 @@ function setupLinkInterception() {
             
             // If we found a setup link, intercept it
             if (href && isSetupUrl(href)) {
+                console.log('SF Setup Panel: Setup link clicked, intercepting:', href);
                 event.preventDefault();
                 event.stopPropagation();
                 
                 chrome.runtime.sendMessage({
                     type: 'SETUP_LINK_CLICKED',
                     url: href
-                }).catch(() => {
+                }).then((response) => {
+                    console.log('SF Setup Panel: Message sent, response:', response);
+                }).catch((error) => {
+                    console.error('SF Setup Panel: Error sending message:', error);
                     // Fall back to default navigation if messaging fails
                     window.location.href = href;
                 });
                 
                 return false;
+            } else if (href) {
+                console.log('SF Setup Panel: Non-setup link clicked:', href);
             }
         } catch (error) {
+            console.error('SF Setup Panel: Error in click handler:', error);
             // In case of error, let the default behavior happen
         }
     }, true);
@@ -193,12 +212,14 @@ async function checkAndReportSetupPage() {
         
         if (isSetupPageNow) {
             try {
+                console.log('SF Setup Panel: Setup page detected:', currentUrl);
                 // Use the chrome.runtime.sendMessage API instead of direct function calls
                 await chrome.runtime.sendMessage({
                     type: 'SETUP_DETECTED',
                     url: currentUrl
                 });
             } catch (error) {
+                console.error('SF Setup Panel: Error reporting setup page:', error);
                 // Handle specific errors
                 if (error.message.includes('Extension context invalidated')) {
                     cleanupExtension();
@@ -208,10 +229,12 @@ async function checkAndReportSetupPage() {
                 }
             }
         } else {
+            console.log('SF Setup Panel: Not a setup page, enabling link interception');
             // If not on a setup page, ensure link interception is enabled
             setupLinkInterception();
         }
     } catch (error) {
+        console.error('SF Setup Panel: Error checking setup page:', error);
         // Error handled silently
     }
 }
@@ -231,7 +254,7 @@ function cleanupExtension() {
     
     // Remove event listeners
     window.removeEventListener('load', checkAndReportSetupPage);
-    window.removeEventListener('unload', handleUnload);
+    window.removeEventListener('pagehide', handleUnload);
 }
 
 /**
@@ -244,6 +267,7 @@ function handleUnload() {
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'CHECK_FOR_SETUP') {
+        console.log('SF Setup Panel: Received CHECK_FOR_SETUP message');
         sendResponse({ checked: true });
         return true;
     }
@@ -254,20 +278,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Initialize the observer if we're in a Salesforce domain
 if (isSalesforceDomain(window.location.href)) {
+    console.log('SF Setup Panel: Content script initialized on Salesforce domain');
+    
     // Create the observer
     observer = new MutationObserver(() => {
         try {
             // Check for URL changes
             if (window.location.href !== currentUrl) {
+                console.log('SF Setup Panel: URL changed from', currentUrl, 'to', window.location.href);
                 currentUrl = window.location.href;
                 checkAndReportSetupPage();
             }
             
             // Check for DOM changes that might indicate setup elements
             if (checkForSetupMenu()) {
+                console.log('SF Setup Panel: Setup menu detected');
                 checkAndReportSetupPage();
             }
         } catch (error) {
+            console.error('SF Setup Panel: Error in observer:', error);
             // Error handled silently
         }
     });
@@ -283,8 +312,11 @@ if (isSalesforceDomain(window.location.href)) {
         window.addEventListener('load', checkAndReportSetupPage);
         
         // Clean up on page unload
-        window.addEventListener('unload', handleUnload);
+        window.addEventListener('pagehide', handleUnload);
     } catch (error) {
+        console.error('SF Setup Panel: Error setting up observer:', error);
         // Error handled silently
     }
+} else {
+    console.log('SF Setup Panel: Not on a Salesforce domain, content script inactive');
 }

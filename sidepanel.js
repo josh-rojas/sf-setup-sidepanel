@@ -37,8 +37,12 @@ const LoadingState = {
 function isSalesforceDomain(url) {
     try {
         const hostname = new URL(url).hostname;
-        return Object.keys(SALESFORCE_DOMAINS).some(domain => hostname.endsWith(domain));
+        console.log('SF Setup Panel: Checking domain for URL:', url, 'hostname:', hostname);
+        const result = Object.keys(SALESFORCE_DOMAINS).some(domain => hostname.endsWith(domain));
+        console.log('SF Setup Panel: Domain check result:', result);
+        return result;
     } catch (e) {
+        console.error('SF Setup Panel: Error checking domain:', e);
         return false;
     }
 }
@@ -65,6 +69,7 @@ class SetupSidePanel {
      * Constructor
      */
     constructor() {
+        console.log('SF Setup Panel: Initializing SetupSidePanel');
         // Initialize state
         this.state = LoadingState.LOADING;
         this.setupFrame = null;
@@ -89,8 +94,8 @@ class SetupSidePanel {
             this.initialize();
         }
         
-        // Add unload listener for cleanup
-        window.addEventListener('unload', () => this.cleanup());
+        // Add pagehide listener for cleanup (modern alternative to unload)
+        window.addEventListener('pagehide', () => this.cleanup());
     }
 
     /**
@@ -98,6 +103,7 @@ class SetupSidePanel {
      */
     handleVisibilityChange() {
         if (document.visibilityState === 'visible') {
+            console.log('SF Setup Panel: Visibility changed to visible, updating tab info');
             this.getCurrentTabInfo();
         }
     }
@@ -107,6 +113,7 @@ class SetupSidePanel {
      */
     cleanup() {
         try {
+            console.log('SF Setup Panel: Cleaning up resources');
             // Remove document-level event listeners - check if bound listeners exist
             if (document && this.boundListeners && this.boundListeners.has('visibilitychange')) {
                 document.removeEventListener('visibilitychange', this.boundListeners.get('visibilitychange'));
@@ -137,7 +144,7 @@ class SetupSidePanel {
             }
         } catch (error) {
             // Silently handle any cleanup errors
-            console.error('Error during cleanup:', error);
+            console.error('SF Setup Panel: Error during cleanup:', error);
         }
     }
 
@@ -146,6 +153,7 @@ class SetupSidePanel {
      */
     initialize() {
         try {
+            console.log('SF Setup Panel: Initializing side panel');
             // Set up DOM references
             this.contentContainer = document.getElementById('content-container');
             this.loadingIndicator = document.getElementById('loading-indicator');
@@ -153,6 +161,7 @@ class SetupSidePanel {
             
             // Create content container if it doesn't exist
             if (!this.contentContainer) {
+                console.log('SF Setup Panel: Creating content container');
                 const main = document.querySelector('main') || document.body;
                 this.contentContainer = document.createElement('div');
                 this.contentContainer.id = 'content-container';
@@ -174,10 +183,12 @@ class SetupSidePanel {
             // Set up refresh button
             const refreshButton = document.getElementById('refreshButton');
             if (refreshButton) {
+                console.log('SF Setup Panel: Setting up refresh button');
                 refreshButton.addEventListener('click', this.handleRefreshClick);
             }
             
             // Listen for messages from the background script
+            console.log('SF Setup Panel: Setting up message listener');
             chrome.runtime.onMessage.addListener(this.handleMessage);
             
             // Listen for visibility changes
@@ -186,6 +197,7 @@ class SetupSidePanel {
             // Get current active tab info
             this.getCurrentTabInfo();
         } catch (error) {
+            console.error('SF Setup Panel: Error initializing side panel:', error);
             this.displayError('Failed to initialize: ' + error.message);
         }
     }
@@ -194,6 +206,7 @@ class SetupSidePanel {
      * Sets up the loading indicator element if not present
      */
     setupLoadingIndicator() {
+        console.log('SF Setup Panel: Setting up loading indicator');
         this.loadingIndicator = document.createElement('div');
         this.loadingIndicator.id = 'loading-indicator';
         this.loadingIndicator.textContent = 'Loading Salesforce Setup...';
@@ -205,6 +218,7 @@ class SetupSidePanel {
      * Sets up the error display element if not present
      */
     setupErrorDisplay() {
+        console.log('SF Setup Panel: Setting up error display');
         this.errorDisplay = document.createElement('div');
         this.errorDisplay.id = 'error-display';
         this.errorDisplay.className = 'error-container';
@@ -223,17 +237,24 @@ class SetupSidePanel {
      */
     getCurrentTabInfo() {
         try {
+            console.log('SF Setup Panel: Getting current tab info');
             chrome.runtime.sendMessage({ type: 'GET_TAB_STATE' })
                 .then(response => {
+                    console.log('SF Setup Panel: Received tab state response:', response);
                     if (response && response.state && response.state.setupUrl) {
+                        console.log('SF Setup Panel: Creating secure frame with URL:', response.state.setupUrl);
                         this.createSecureFrame(response.state.setupUrl);
+                    } else {
+                        console.log('SF Setup Panel: No setup URL in tab state');
                     }
                 })
                 .catch(error => {
+                    console.error('SF Setup Panel: Error getting tab state:', error);
                     // Handle error silently with fallback error display
                     this.displayError('Unable to load tab information. Try refreshing the page.');
                 });
         } catch (error) {
+            console.error('SF Setup Panel: Error getting tab state:', error);
             // Handle error silently with fallback error display
             this.displayError("Unable to load tab information. Try refreshing the page.");
         }
@@ -244,20 +265,24 @@ class SetupSidePanel {
      */
     createSecureFrame(setupUrl) {
         try {
+            console.log('SF Setup Panel: Creating secure frame with URL:', setupUrl);
             // Set state to loading
             this.setState(LoadingState.LOADING);
             
             // Validate URL
             if (!setupUrl || typeof setupUrl !== 'string') {
+                console.error('SF Setup Panel: Invalid setup URL provided');
                 throw new Error('Invalid setup URL provided');
             }
             
             if (!isSalesforceDomain(setupUrl)) {
+                console.error('SF Setup Panel: URL is not from a valid Salesforce domain:', setupUrl);
                 throw new Error('URL is not from a valid Salesforce domain');
             }
             
             // Remove existing frame if any
             if (this.setupFrame) {
+                console.log('SF Setup Panel: Removing existing frame');
                 this.setupFrame.removeEventListener('load', this.handleLoadSuccess);
                 this.setupFrame.removeEventListener('error', this.handleLoadError);
                 
@@ -269,6 +294,7 @@ class SetupSidePanel {
             
             // Double-check content container exists
             if (!this.contentContainer) {
+                console.log('SF Setup Panel: Content container not found, creating one');
                 const main = document.querySelector('main') || document.body;
                 this.contentContainer = document.createElement('div');
                 this.contentContainer.id = 'content-container';
@@ -276,6 +302,7 @@ class SetupSidePanel {
             }
 
             // Create new iframe with full permissions
+            console.log('SF Setup Panel: Creating new iframe');
             this.setupFrame = document.createElement('iframe');
             this.setupFrame.id = 'setupFrame';
             
@@ -288,9 +315,11 @@ class SetupSidePanel {
             this.setupFrame.addEventListener('error', this.handleLoadError);
             
             // Set source and append to container
+            console.log('SF Setup Panel: Setting iframe src to:', setupUrl);
             this.setupFrame.src = setupUrl;
             this.contentContainer.appendChild(this.setupFrame);
         } catch (error) {
+            console.error('SF Setup Panel: Error creating secure frame:', error);
             this.displayError('Failed to load content: ' + error.message);
             this.setState(LoadingState.ERROR, error.message);
         }
@@ -301,19 +330,28 @@ class SetupSidePanel {
      */
     handleMessage(message, sender, sendResponse) {
         try {
+            console.log('SF Setup Panel: Sidepanel received message:', message);
+            
             if (message.type === 'LOAD_SETUP' && message.url) {
+                console.log('SF Setup Panel: Processing LOAD_SETUP message with URL:', message.url);
+                
                 if (isSalesforceDomain(message.url)) {
+                    console.log('SF Setup Panel: Valid Salesforce domain, creating secure frame');
                     this.createSecureFrame(message.url);
                     sendResponse({ success: true });
                 } else {
+                    console.error('SF Setup Panel: Invalid Salesforce domain:', message.url);
                     this.setState(LoadingState.ERROR, 'Invalid Salesforce domain');
                     sendResponse({ success: false, error: 'Invalid domain' });
                 }
                 return true; // Indicate that we'll respond asynchronously
+            } else {
+                console.warn('SF Setup Panel: Unhandled message type:', message.type);
             }
             
             return false;
         } catch (error) {
+            console.error('SF Setup Panel: Error handling message:', error);
             sendResponse({ error: error.message });
             return true;
         }
@@ -324,13 +362,17 @@ class SetupSidePanel {
      */
     handleRefreshClick() {
         try {
+            console.log('SF Setup Panel: Refresh button clicked');
             if (this.setupFrame && this.setupFrame.src) {
+                console.log('SF Setup Panel: Refreshing iframe content');
                 this.setState(LoadingState.LOADING);
                 this.setupFrame.src = this.setupFrame.src;
             } else {
+                console.log('SF Setup Panel: No iframe or src, getting tab info');
                 this.getCurrentTabInfo();
             }
         } catch (error) {
+            console.error('SF Setup Panel: Error refreshing content:', error);
             this.displayError('Failed to refresh: ' + error.message);
         }
     }
@@ -339,6 +381,7 @@ class SetupSidePanel {
      * Updates the panel's state
      */
     setState(state, errorMessage = null) {
+        console.log('SF Setup Panel: Setting state to:', state, errorMessage ? 'with error: ' + errorMessage : '');
         this.state = state;
         this.updateUI(state, errorMessage);
     }
@@ -347,10 +390,14 @@ class SetupSidePanel {
      * Updates the UI based on current state
      */
     updateUI(state, errorMessage = null) {
-        if (!this.loadingIndicator || !this.errorDisplay) return;
+        if (!this.loadingIndicator || !this.errorDisplay) {
+            console.error('SF Setup Panel: Missing UI elements for updateUI');
+            return;
+        }
         
         switch (state) {
             case LoadingState.LOADING:
+                console.log('SF Setup Panel: Updating UI for loading state');
                 // Show loading indicator
                 this.loadingIndicator.classList.add('visible');
                 
@@ -365,6 +412,7 @@ class SetupSidePanel {
                 break;
                 
             case LoadingState.LOADED:
+                console.log('SF Setup Panel: Updating UI for loaded state');
                 // Hide loading indicator
                 this.loadingIndicator.classList.remove('visible');
                 
@@ -379,6 +427,7 @@ class SetupSidePanel {
                 break;
                 
             case LoadingState.ERROR:
+                console.log('SF Setup Panel: Updating UI for error state');
                 // Hide loading indicator
                 this.loadingIndicator.classList.remove('visible');
                 
@@ -396,6 +445,7 @@ class SetupSidePanel {
      */
     displayError(message) {
         try {
+            console.error('SF Setup Panel: Displaying error:', message);
             if (this.errorMessageEl) {
                 this.errorMessageEl.textContent = message;
                 if (this.errorDisplay) {
@@ -408,7 +458,7 @@ class SetupSidePanel {
             }
         } catch (error) {
             // Error in error handler, recover gracefully by falling back to console
-            console.error('Error displaying error message:', error);
+            console.error('SF Setup Panel: Error displaying error message:', error);
         }
     }
 
@@ -416,6 +466,7 @@ class SetupSidePanel {
      * Handles successful loading of the setup frame
      */
     handleLoadSuccess() {
+        console.log('SF Setup Panel: Frame loaded successfully');
         this.setState(LoadingState.LOADED);
     }
 
@@ -423,6 +474,7 @@ class SetupSidePanel {
      * Handles loading errors
      */
     handleLoadError(error) {
+        console.error('SF Setup Panel: Frame loading error:', error);
         const errorMessage = error.message || 'Failed to load Salesforce Setup content';
         this.setState(LoadingState.ERROR, errorMessage);
     }
@@ -430,8 +482,10 @@ class SetupSidePanel {
 
 // Initialize the side panel
 try {
+    console.log('SF Setup Panel: Starting initialization');
     window.setupSidePanel = new SetupSidePanel();
 } catch (error) {
+    console.error('SF Setup Panel: Error initializing:', error);
     // Display error in the UI if possible
     const errorDisplay = document.getElementById('error-display');
     if (errorDisplay) {
