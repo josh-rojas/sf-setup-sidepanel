@@ -9,7 +9,9 @@
   "update_url": "https://clients2.google.com/service/update2/crx",
   "permissions": [
     "sidePanel",
-    "tabs"
+    "tabs",
+    "scripting",
+    "storage"
   ],
   "host_permissions": [
     "*://*.salesforce.com/*",
@@ -17,8 +19,7 @@
     "*://*.salesforce-setup.com/*"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
