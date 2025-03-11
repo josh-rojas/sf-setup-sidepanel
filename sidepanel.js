@@ -106,14 +106,50 @@ class SetupSidePanel {
         }
 
         this.setupFrame = document.createElement('iframe');
-        // Security measures
-        this.setupFrame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms');
-        this.setupFrame.setAttribute('referrerpolicy', 'strict-origin');
-        this.setupFrame.setAttribute('csp', "default-src 'self' *.salesforce.com *.force.com *.salesforce-setup.com");
+        // Updated security measures to allow necessary Salesforce functionality
+        this.setupFrame.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-storage-access-by-user-activation');
+        this.setupFrame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+        this.setupFrame.setAttribute('csp', "default-src 'self' *.salesforce.com *.force.com *.salesforce-setup.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' *.salesforce.com *.force.com *.salesforce-setup.com; style-src 'self' 'unsafe-inline' *.salesforce.com *.force.com *.salesforce-setup.com; img-src 'self' data: blob: *.salesforce.com *.force.com *.salesforce-setup.com");
         
-        // Error handling
-        this.setupFrame.onerror = this.handleLoadError.bind(this);
-        this.setupFrame.onload = this.handleLoadSuccess.bind(this);
+        // Error handling with detailed error information
+        this.setupFrame.onerror = (error) => {
+            const errorDetails = {
+                message: error.message || 'Unknown error',
+                timestamp: new Date().toISOString(),
+                url: setupUrl
+            };
+            this.handleLoadError(errorDetails);
+        };
+        
+        // Enhanced load success handling
+        this.setupFrame.onload = () => {
+            try {
+                // Verify the loaded content is from an allowed domain
+                const frameLocation = this.setupFrame.contentWindow.location.href;
+                if (this.validateSalesforceDomain(frameLocation)) {
+                    this.handleLoadSuccess();
+                } else {
+                    this.handleLoadError({
+                        message: 'Invalid domain loaded in frame',
+                        timestamp: new Date().toISOString(),
+                        url: frameLocation
+                    });
+                }
+            } catch (e) {
+                // Handle cross-origin restrictions gracefully
+                if (e.name === 'SecurityError') {
+                    // If we can't access the location due to CORS, but the load succeeded,
+                    // we'll trust our initial URL validation
+                    this.handleLoadSuccess();
+                } else {
+                    this.handleLoadError({
+                        message: e.message,
+                        timestamp: new Date().toISOString(),
+                        url: setupUrl
+                    });
+                }
+            }
+        };
         
         this.setupFrame.src = setupUrl;
         document.body.appendChild(this.setupFrame);
@@ -186,12 +222,79 @@ class SetupSidePanel {
     }
 
     /**
-     * Handles loading errors
-     * @param {Error} error - The error that occurred
+     * Enhanced error handling with detailed error information and recovery options
+     * @param {Object} error - Error details object
      */
     handleLoadError(error) {
-        this.setState(LoadingState.ERROR, 'Failed to load Salesforce Setup content');
-        console.error('Setup frame load error:', error);
+        const errorMessage = this.formatErrorMessage(error);
+        this.setState(LoadingState.ERROR, errorMessage);
+        
+        // Log error for debugging
+        console.error('Setup frame error:', error);
+
+        // Create retry button if appropriate
+        if (this.isRetryableError(error)) {
+            this.createRetryButton();
+        }
+
+        // Send error to background script for logging
+        chrome.runtime.sendMessage({
+            type: 'SETUP_ERROR',
+            error: {
+                message: error.message,
+                timestamp: error.timestamp,
+                url: error.url
+            }
+        }).catch(console.error);
+    }
+
+    /**
+     * Formats error message for display
+     * @param {Object} error - Error details object
+     * @returns {string} Formatted error message
+     */
+    formatErrorMessage(error) {
+        const baseMessage = error.message || 'An error occurred while loading Salesforce Setup';
+        const timestamp = error.timestamp ? new Date(error.timestamp).toLocaleTimeString() : '';
+        return `${baseMessage} (${timestamp})${error.url ? '\nURL: ' + error.url : ''}`;
+    }
+
+    /**
+     * Determines if an error is retryable
+     * @param {Object} error - Error details object
+     * @returns {boolean} Whether the error is retryable
+     */
+    isRetryableError(error) {
+        const retryableErrors = [
+            'Failed to load',
+            'Network error',
+            'timeout',
+            'SecurityError'
+        ];
+        return retryableErrors.some(e => 
+            error.message && error.message.toLowerCase().includes(e.toLowerCase())
+        );
+    }
+
+    /**
+     * Creates and adds a retry button to the error display
+     */
+    createRetryButton() {
+        const retryButton = document.createElement('button');
+        retryButton.textContent = 'Retry';
+        retryButton.className = 'retry-button';
+        retryButton.setAttribute('aria-label', 'Retry loading Salesforce Setup');
+        
+        retryButton.addEventListener('click', () => {
+            this.setState(LoadingState.LOADING);
+            if (this.setupFrame) {
+                this.setupFrame.src = this.setupFrame.src;
+            }
+        });
+
+        if (this.errorDisplay) {
+            this.errorDisplay.appendChild(retryButton);
+        }
     }
 
     /**
@@ -212,18 +315,29 @@ class SetupSidePanel {
     }
 
     /**
-     * Sets up the error display element
-     */
-    /**
-     * Sets up the error display element
+     * Sets up the error display element with enhanced styling and accessibility
      * @private
      */
     setupErrorDisplay() {
         this.errorDisplay = document.createElement('div');
         this.errorDisplay.id = 'error-display';
+        this.errorDisplay.className = 'error-container';
         this.errorDisplay.style.display = 'none';
         this.errorDisplay.setAttribute('role', 'alert');
         this.errorDisplay.setAttribute('aria-live', 'assertive');
+        
+        // Add error icon
+        const errorIcon = document.createElement('span');
+        errorIcon.className = 'error-icon';
+        errorIcon.textContent = '⚠️';
+        errorIcon.setAttribute('aria-hidden', 'true');
+        
+        // Add message container
+        const messageContainer = document.createElement('div');
+        messageContainer.className = 'error-message';
+        
+        this.errorDisplay.appendChild(errorIcon);
+        this.errorDisplay.appendChild(messageContainer);
         document.body.appendChild(this.errorDisplay);
     }
 }

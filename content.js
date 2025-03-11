@@ -201,9 +201,43 @@ history.replaceState = function(...args) {
 
 // Listen for popstate events
 window.addEventListener('popstate', handleUrlChange);
+
+const setupObserver = new MutationObserver(() => {
+    const setupDetected = checkForSetupMenu();
+    handleSetupDetection(setupDetected).catch(handleExtensionError);
+});
+
 /**
- * Observes DOM changes to detect Setup UI elements
- * @type {MutationObserver}
+ * Handles extension-specific errors
+ * @param {Error} error - The error to handle
  */
-const observer = new MutationObserver(() => {
-    const setupDetected = checkForSet
+function handleExtensionError(error) {
+    if (error.message.includes('Extension context invalidated')) {
+        // Extension was reloaded or disabled
+        setupObserver.disconnect();
+        observer.disconnect();
+        // Clean up event listeners
+        window.removeEventListener('popstate', handleUrlChange);
+        // Restore original History API methods
+        history.pushState = originalPushState;
+        history.replaceState = originalReplaceState;
+    } else {
+        console.error('Extension error:', error);
+    }
+}
+
+// Start observing DOM changes for Setup UI elements
+setupObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+});
+
+// Initial setup check
+const initialSetupDetected = checkForSetupMenu();
+handleSetupDetection(initialSetupDetected).catch(handleExtensionError);
+
+// Cleanup on unload
+window.addEventListener('unload', () => {
+    setupObserver.disconnect();
+    observer.disconnect();
+});

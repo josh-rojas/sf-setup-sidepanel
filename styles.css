@@ -96,9 +96,83 @@ body {
     box-shadow: 0 4px 8px var(--shadow-color);
 }
 
-/* ==========================================================================
-   Accessibility
-   ========================================================================== */
+/* Error Display Styles */
+.error-container {
+    display: flex;
+    align-items: flex-start;
+    padding: 16px;
+    margin: 16px;
+    background-color: #fef1f1;
+    border: 1px solid #ea001e;
+    border-radius: 4px;
+    color: #1a1a1a;
+}
+
+.error-icon {
+    margin-right: 12px;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.error-message {
+    flex: 1;
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+.retry-button {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 8px 16px;
+    background-color: #0176d3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.retry-button:hover {
+    background-color: #014486;
+}
+
+.retry-button:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0176d3;
+}
+
+/* Loading Indicator Styles */
+#loading-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    color: #706e6b;
+    font-size: 14px;
+}
+
+#loading-indicator::before {
+    content: '';
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+    border: 2px solid #0176d3;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Accessibility Helpers */
 .visually-hidden {
     position: absolute;
     width: 1px;
@@ -111,6 +185,26 @@ body {
     border: 0;
 }
 
+/* Focus Management */
+:focus {
+    outline: 2px solid #0176d3;
+    outline-offset: 2px;
+}
+
+/* High Contrast Mode Support */
+@media (forced-colors: active) {
+    .error-container {
+        border: 2px solid CanvasText;
+    }
+    
+    .retry-button {
+        border: 1px solid ButtonText;
+    }
+}
+
+/* ==========================================================================
+   Accessibility
+   ========================================================================== */
 .focus-visible:focus {
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
