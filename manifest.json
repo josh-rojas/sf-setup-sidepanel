@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Enhances Salesforce productivity by providing quick access to Setup menu through Chrome's side panel. Navigate Salesforce setup pages efficiently without leaving your current tab.",
   "author": "Josh",
-  "minimum_chrome_version": "114",
+  "minimum_chrome_version": "116",
   "homepage_url": "https://github.com/joshmedeski/sf-setup-sidepanel",
   "update_url": "https://clients2.google.com/service/update2/crx",
   "permissions": [
@@ -19,7 +19,8 @@
     "*://*.salesforce-setup.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
@@ -33,7 +34,7 @@
     }
   ],
   "web_accessible_resources": [{
-    "resources": ["styles.css"],
+    "resources": ["styles.css", "icons/*"],
     "matches": [
       "*://*.salesforce.com/*",
       "*://*.force.com/*",
@@ -44,6 +45,14 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Salesforce Setup"
   },
   "side_panel": {
     "default_path": "sidepanel.html"

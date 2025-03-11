@@ -10,19 +10,36 @@ const state = {
     tabState: new Map()
 };
 
+// Global error handler for uncaught errors
+self.addEventListener('error', (event) => {
+    console.error('Global error:', event.error);
+});
+
+// Unhandled promise rejection handler
+self.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason);
+});
+
+// Service worker activation
+self.addEventListener('activate', (event) => {
+    console.log('Service worker activated');
+});
+
 // Initialize the extension when installed
-chrome.runtime.onInstalled.addListener(function(details) {
+chrome.runtime.onInstalled.addListener(async (details) => {
     console.log('Extension installed or updated:', details.reason);
     
-    // Set default side panel behavior
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
-    .catch(function(error) {
+    try {
+        // Set default side panel behavior
+        await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+        console.log('Side panel behavior set successfully');
+    } catch (error) {
         console.error('Failed to set panel behavior:', error);
-    });
+    }
 });
 
 // Handle tab updates
-chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (!tab.url) return;
     
     // Check if this is a Salesforce domain
@@ -45,58 +62,62 @@ chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
         url: tab.url
     });
     
-    // Enable/disable side panel based on URL
-    chrome.sidePanel.setOptions({
-        tabId: tabId,
-        path: 'sidepanel.html',
-        enabled: isSalesforceUrl
-    }).catch(function(error) {
+    try {
+        // Enable/disable side panel based on URL
+        await chrome.sidePanel.setOptions({
+            tabId: tabId,
+            path: 'sidepanel.html',
+            enabled: isSalesforceUrl
+        });
+    } catch (error) {
         console.error('Failed to update side panel for tab:', error);
-    });
+    }
 });
 
 // Clean up tab state
-chrome.tabs.onRemoved.addListener(function(tabId) {
+chrome.tabs.onRemoved.addListener((tabId) => {
     state.tabState.delete(tabId);
 });
 
 // Handle messages
-chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('Received message:', message.type);
+    
+    const handleSetupDetected = async (message, sender, sendResponse) => {
+        const tabId = sender.tab?.id;
+        if (!tabId) {
+            sendResponse({ error: 'No tab ID provided' });
+            return;
+        }
+
+        // Update tab state
+        const currentState = state.tabState.get(tabId) || {};
+        state.tabState.set(tabId, {
+            ...currentState,
+            setupActive: true,
+            setupUrl: message.url
+        });
+        
+        try {
+            // Open the side panel for this specific tab
+            await chrome.sidePanel.open({ tabId: tabId });
+            
+            // Send setup URL to side panel
+            await chrome.runtime.sendMessage({
+                type: 'LOAD_SETUP',
+                url: message.url
+            });
+            
+            sendResponse({ success: true });
+        } catch (error) {
+            console.error('Error opening side panel:', error);
+            sendResponse({ error: error.message });
+        }
+    };
     
     try {
         if (message.type === 'SETUP_DETECTED') {
-            const tabId = sender.tab?.id;
-            if (!tabId) {
-                sendResponse({ error: 'No tab ID provided' });
-                return true;
-            }
-    
-            // Update tab state
-            const currentState = state.tabState.get(tabId) || {};
-            state.tabState.set(tabId, {
-                ...currentState,
-                setupActive: true,
-                setupUrl: message.url
-            });
-            
-            // Open the side panel for this specific tab
-            chrome.sidePanel.open({ tabId: tabId })
-                .then(function() {
-                    // Send setup URL to side panel
-                    return chrome.runtime.sendMessage({
-                        type: 'LOAD_SETUP',
-                        url: message.url
-                    });
-                })
-                .then(function() {
-                    sendResponse({ success: true });
-                })
-                .catch(function(error) {
-                    console.error('Error opening side panel:', error);
-                    sendResponse({ error: error.message });
-                });
-            
+            handleSetupDetected(message, sender, sendResponse);
             return true; // Keep the message channel open for async response
         }
         
@@ -126,10 +147,5 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
     }
     
     return true;
-});
-
-// Error handling
-chrome.runtime.onError.addListener((error) => {
-    console.error('Runtime error:', error);
 });
 
