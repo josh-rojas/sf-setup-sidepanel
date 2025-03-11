@@ -83,42 +83,41 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('Received message:', message.type);
     
-    const handleSetupDetected = async (message, sender, sendResponse) => {
-        const tabId = sender.tab?.id;
-        if (!tabId) {
-            sendResponse({ error: 'No tab ID provided' });
-            return;
-        }
-
-        // Update tab state
-        const currentState = state.tabState.get(tabId) || {};
-        state.tabState.set(tabId, {
-            ...currentState,
-            setupActive: true,
-            setupUrl: message.url
-        });
-        
-        try {
-            // Open the side panel for this specific tab
-            await chrome.sidePanel.open({ tabId: tabId });
-            
-            // Send setup URL to side panel
-            await chrome.runtime.sendMessage({
-                type: 'LOAD_SETUP',
-                url: message.url
-            });
-            
-            sendResponse({ success: true });
-        } catch (error) {
-            console.error('Error opening side panel:', error);
-            sendResponse({ error: error.message });
-        }
-    };
-    
     try {
         if (message.type === 'SETUP_DETECTED') {
-            handleSetupDetected(message, sender, sendResponse);
-            return true; // Keep the message channel open for async response
+            // Handle this message synchronously and create a separate promise chain for async operations
+            const tabId = sender.tab?.id;
+            if (!tabId) {
+                sendResponse({ error: 'No tab ID provided' });
+                return true;
+            }
+            
+            // Update tab state
+            const currentState = state.tabState.get(tabId) || {};
+            state.tabState.set(tabId, {
+                ...currentState,
+                setupActive: true,
+                setupUrl: message.url
+            });
+            
+            // Use a promise chain for async operations and send response at the end
+            chrome.sidePanel.open({ tabId: tabId })
+                .then(() => {
+                    return chrome.runtime.sendMessage({
+                        type: 'LOAD_SETUP',
+                        url: message.url
+                    });
+                })
+                .then(() => {
+                    sendResponse({ success: true });
+                })
+                .catch((error) => {
+                    console.error('Error opening side panel:', error);
+                    sendResponse({ error: error.message });
+                });
+            
+            // Return true to indicate we'll send a response asynchronously
+            return true;
         }
         
         if (message.type === 'GET_TAB_STATE') {
